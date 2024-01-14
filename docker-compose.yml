@@ -1,0 +1,18 @@
+version: '3.7'
+
+services:
+  mariadb:
+    image: mariadb:latest
+    command: --max-connections=10000
+    volumes:
+      - gateway-data:/var/lib/mysql
+    ports:
+      - "32706:3306"  # Change this line
+    environment:
+      MYSQL_ROOT_PASSWORD: myrootpassword
+      MYSQL_DATABASE: mydatabase
+      MYSQL_USER: myuser
+      MYSQL_PASSWORD: mypassword
+
+volumes:
+  gateway-data:
