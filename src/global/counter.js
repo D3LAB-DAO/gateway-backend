@@ -3,7 +3,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 
 // State
-let epoch = 10000; // (ms)
+const EPOCH = 60000; // (ms)
 let round = 0;
 const INIT = "Hello, World!";
 let seed = sha256(`${INIT}${round}`);
@@ -13,7 +13,7 @@ app.use(bodyParser.json());
 
 app.get('/epoch', async (req, res) => {
     try {
-        res.status(200).send({ "epoch": epoch });
+        res.status(200).send({ "epoch": EPOCH });
     } catch (error) {
         res.status(500).send({ "error": error.message });
     }
@@ -27,6 +27,7 @@ app.get('/round', async (req, res) => {
     }
 });
 
+// TODO: {seed}_{r-f}
 app.get('/seed', async (req, res) => {
     try {
         res.status(200).send({ "seed": seed });
@@ -45,7 +46,7 @@ function repeatFunction() {
     console.log(`Round: ${round}, Seed: ${seed}`);
 }
 
-setInterval(repeatFunction, epoch);
+setInterval(repeatFunction, EPOCH);
 
 const port = process.env.PORT || 30328;
 app.listen(port, () => {

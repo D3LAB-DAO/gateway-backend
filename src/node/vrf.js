@@ -1,4 +1,3 @@
-const BN = require('bn.js');
 const { Evaluate, ProofHoHash } = require('@idena/vrf-js');
 const elliptic = require('elliptic');
 const express = require('express');
@@ -9,8 +8,6 @@ const env = process.env;
 
 // PK
 const key = EC.keyFromPrivate(env.PK);
-console.log(`Private Key: ${key.getPrivate()}`);
-console.log(`Public Key: ${key.getPublic().encode('hex')}`);
 
 const app = express();
 app.use(bodyParser.json());
@@ -29,8 +26,13 @@ app.post('/evaluate', async (req, res) => {
 app.post('/verify', async (req, res) => {
     try {
         const { publicKey, data, hash, proof } = req.body;
-        var key = EC.keyFromPublic(publicKey, 'hex');
-        const result = ProofHoHash(key.getPublic(), data, stringToIntArray(proof));
+        var _key = EC.keyFromPublic(publicKey, 'hex');
+
+        console.log(
+            data
+        );
+
+        const result = ProofHoHash(_key.getPublic(), data, stringToIntArray(proof));
         res.status(200).send({ "result": `[${result.toString()}]` === hash });
     } catch (error) {
         console.error(error);
@@ -47,4 +49,6 @@ function stringToIntArray(str) {
 const port = process.env.PORT || 30327;
 app.listen(port, () => {
     console.log(`VRF service is running on port ${port}`);
+    console.log(`Private Key: ${key.getPrivate()}`);
+    console.log(`Public Key: ${key.getPublic().encode('hex')}`);
 });
