@@ -47,8 +47,13 @@ function stringToIntArray(str) {
 }
 
 const port = process.env.PORT || 30327;
-app.listen(port, () => {
+const server = app.listen(port, () => {
     console.log(`VRF service is running on port ${port}`);
     console.log(`Private Key: ${key.getPrivate()}`);
     console.log(`Public Key: ${key.getPublic().encode('hex')}`);
 });
+
+module.exports = {
+    app,
+    server
+};
