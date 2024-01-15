@@ -131,11 +131,17 @@ async function init() { // DB
     node_id = result.insertId;
 }
 
-init().then(() => {
-    setInterval(cron, EPOCH);
-    // cron().then(() => {
-    //     process.exit(0);
-    // }).catch((error) => {
-    //     console.error(error);
-    // });
-});
+if (require.main === module) {
+    init().then(() => {
+        setInterval(cron, EPOCH);
+        // cron().then(() => {
+        //     process.exit(0);
+        // }).catch((error) => {
+        //     console.error(error);
+        // });
+    });
+}
+
+module.exports = {
+    run
+};

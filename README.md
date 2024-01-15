@@ -73,10 +73,18 @@ $ node src/relay/send.js
 
 # Test
 
+### Test VRF
+
 ```bash
 $ export PK=[YOUR_PRIVATE_KEY_HERE]
 
 $ npm test test/vrf.test.js
+```
+
+### Test VM
+
+```bash
+$ npm test test/app.test.js
 ```
 
 
