@@ -5,22 +5,64 @@ const axios = require('axios');
 const elliptic = require('elliptic');
 const { Script, createContext } = require('vm');
 
-const VRF_PORT = 30327;
-const COUNTER_PORT = 30328;
-const VRF_ENDPOINT = `http://localhost:${VRF_PORT}`;
-const COUNTER_ENDPOINT = `http://localhost:${COUNTER_PORT}`;
-
-let connection;
-
-const EC = new elliptic.ec('secp256k1');
-const env = process.env;
-const key = EC.keyFromPrivate(env.PK);
-let node_id;
-
-let processing = false;
 const EPOCH = 10000; // (ms)
 const TIMEOUT = 30000; // (ms)
-const DIFF = new BN("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 'hex');
+
+if (!process.env.STANDALONE) {
+    const VRF_PORT = 30327;
+    const COUNTER_PORT = 30328;
+    const VRF_ENDPOINT = `http://localhost:${VRF_PORT}`;
+    const COUNTER_ENDPOINT = `http://localhost:${COUNTER_PORT}`;
+
+    let connection;
+
+    const EC = new elliptic.ec('secp256k1');
+    const env = process.env;
+    const key = EC.keyFromPrivate(env.PK);
+    let node_id;
+
+    let processing = false;
+
+    const DIFF = new BN("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 'hex');
+
+    async function init() { // DB
+        try {
+            connection = await createConnection();
+            console.log("CREATE CONNECTION");
+        } catch (error) {
+            console.error(error);
+        }
+
+        await createTable(connection);
+
+        // TODO: close
+        // try {
+        //     await closeConnection(connection);
+        //     console.log("CLOSE CONNECTION");
+        // } catch (error) {
+        //     console.error(error);
+        // }
+
+        const publicKey = key.getPublic().encode('hex');
+        console.log(`Public Key: ${publicKey}`);
+
+        const result = await saveNodes(connection, {
+            "public_key": publicKey
+        });
+        node_id = result.insertId;
+    }
+
+    if (require.main === module) {
+        init().then(() => {
+            setInterval(cron, EPOCH);
+            // cron().then(() => {
+            //     process.exit(0);
+            // }).catch((error) => {
+            //     console.error(error);
+            // });
+        });
+    }
+}
 
 const sandbox = {
     console: console,
@@ -123,43 +165,33 @@ async function cron() {
     processing = false;
 }
 
-async function init() { // DB
-    try {
-        connection = await createConnection();
-        console.log("CREATE CONNECTION");
-    } catch (error) {
-        console.error(error);
-    }
 
-    await createTable(connection);
+if (process.env.STANDALONE) {
+    const express = require('express');
+    const bodyParser = require('body-parser');
 
-    // TODO: close
-    // try {
-    //     await closeConnection(connection);
-    //     console.log("CLOSE CONNECTION");
-    // } catch (error) {
-    //     console.error(error);
-    // }
+    const app = express();
+    app.use(bodyParser.json());
 
-    const publicKey = key.getPublic().encode('hex');
-    console.log(`Public Key: ${publicKey}`);
-
-    const result = await saveNodes(connection, {
-        "public_key": publicKey
+    app.post('/run', async (req, res) => {
+        try {
+            const { url, inputParameters } = req.body;
+            console.log(url, inputParameters);
+            const result = await run(url, inputParameters);
+            console.log(result);
+            res.status(200).send({ "result": result });
+        } catch (error) {
+            console.error(error);
+            res.status(500).send({ "error": error.message });
+        }
     });
-    node_id = result.insertId;
-}
 
-if (require.main === module) {
-    init().then(() => {
-        setInterval(cron, EPOCH);
-        // cron().then(() => {
-        //     process.exit(0);
-        // }).catch((error) => {
-        //     console.error(error);
-        // });
+    const port = process.env.PORT || 3000;
+    const server = app.listen(port, () => {
+        console.log(`Server is running on ${port}`);
     });
 }
+
 
 module.exports = {
     run
