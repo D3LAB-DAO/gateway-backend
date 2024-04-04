@@ -1,3 +1,21 @@
+# TL;DR
+
+```bash
+$ docker-compose up -d --build
+
+$ node src/global/counter.js
+
+$ node src/node/vrf.js
+
+$ node src/node/app.js
+
+$ node src/relay/receive.js
+
+$ node src/relay/send.js
+```
+
+---
+
 # Counter Service
 
 ```bash
