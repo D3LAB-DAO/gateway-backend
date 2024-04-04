@@ -1,5 +1,5 @@
 const { createConnection, closeConnection } = require('./db/maria');
-const { createTable, getIdsToPublish, getResultsById, setTxById } = require('./db/queries');
+const { createTable, getIdsToPublish, getResultsById, setRequestTxById, setResultTxById, setSuccessTxById } = require('./db/queries');
 const BN = require('bn.js');
 const axios = require('axios');
 
@@ -11,11 +11,11 @@ let processing = false;
 const EPOCH = 10000; // (ms)
 const TIMEOUT = 30000; // (ms)
 const DIFF = new BN("8000000000000000000000000000000000000000000000000000000000000000", 'hex');
-const QUORUM = 3; // TODO: more quorum
+const QUORUM = 1; // TODO: more quorum
 
 async function cron() {
     if (processing) {
-        return;
+        return Promise.resolve("Already processing");
     } else {
         processing = true;
 
@@ -59,12 +59,19 @@ async function cron() {
             }
 
             if (agreement >= QUORUM) {
-                console.log(id, "DONE"); // TODO: send tx
-                await setTxById(connection, "DONE", id);
+                try {
+                    console.log(id, "DONE"); // TODO: send tx
+                    await setResultTxById(connection, "DONE", id);
+                } catch (error) {
+                    console.error(error);
+                } finally {
+                    await setSuccessTxById(connection, true, id);
+                }
             }
         }
 
         processing = false;
+        return Promise.resolve("Completed processing");
     }
 }
 
@@ -77,14 +84,6 @@ async function init() { // DB
     }
 
     await createTable(connection);
-
-    // TODO: close
-    // try {
-    //     await closeConnection(connection);
-    //     console.log("CLOSE CONNECTION");
-    // } catch (error) {
-    //     console.error(error);
-    // }
 }
 
 init().then(() => {

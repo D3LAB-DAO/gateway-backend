@@ -20,7 +20,7 @@ let node_id;
 let processing = false;
 const EPOCH = 10000; // (ms)
 const TIMEOUT = 30000; // (ms)
-const DIFF = new BN("FFFFFFFFFFFFFFFFFFFFFFFFFF00000000000000000000000000000000000000", 'hex');
+const DIFF = new BN("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 'hex');
 
 const sandbox = {
     console: console,
@@ -86,11 +86,12 @@ async function cron() {
                 "data": msg
             });
             const hash = _responseVrf.data.hash;
-            const hashHex = (new BN(hash)).toString(16);
+            // const hashHex = (new BN(hash)).toString(16);
+            const hashHex = (new BN(hash));
             const proof = _responseVrf.data.proof;
 
             // 2. run
-            if (hashHex < DIFF) {
+            if (DIFF - hashHex >= 0) {
                 const result = await run(uri, params);
                 console.log(`${id} RUN: ${result}`);
 
@@ -110,7 +111,7 @@ async function cron() {
                 });
                 // console.log(savedResult.insertId);
             } else {
-                console.log(`${id} PASS`)
+                console.log(`${id} PASS`, hashHex, ">", DIFF);
             }
         } catch (err) {
             console.error(err);
