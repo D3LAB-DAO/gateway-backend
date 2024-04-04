@@ -30,7 +30,8 @@ app.post('/request', async (req, res) => {
             "timestamp": timestamp,
             "deadline": deadline,
             "seed": seed,
-            "tx": null
+            "tx": null,
+            "max_retries": 10,
         });
 
         res.status(200).send({ "id": result.insertId });

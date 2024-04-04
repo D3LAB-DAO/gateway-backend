@@ -3,7 +3,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 
 // State
-const EPOCH = 60000; // (ms)
+const EPOCH = 30000; // (ms)
 let round = 0;
 const INIT = "Hello, World!";
 let seed = sha256(`${INIT}${round}`);

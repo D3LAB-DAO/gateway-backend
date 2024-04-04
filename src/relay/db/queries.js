@@ -10,6 +10,7 @@ async function createTable(connection) {
                 timestamp BIGINT NOT NULL,
                 deadline BIGINT NOT NULL,
                 seed VARCHAR(64) NOT NULL,
+                max_retries INT DEFAULT 10,
                 tx TEXT
             );
     `;
@@ -32,7 +33,9 @@ async function createTable(connection) {
             result TEXT NOT NULL,
             sig TEXT NOT NULL,
             FOREIGN KEY (request_id) REFERENCES requests(id),
-            FOREIGN KEY (node_id) REFERENCES nodes(id)
+            FOREIGN KEY (node_id) REFERENCES nodes(id),
+            tx TEXT,
+            success BOOLEAN DEFAULT FALSE
         );
     `;
 
@@ -56,10 +59,11 @@ async function saveRequest(connection, state) {
                 timestamp,
                 deadline,
                 seed,
-                tx
+                tx,
+                max_retries
             )
         VALUES
-            (?, ?, ?, ?, ?, ?)
+            (?, ?, ?, ?, ?, ?, ?)
     `;
 
     const values = [
@@ -68,7 +72,8 @@ async function saveRequest(connection, state) {
         state.timestamp,
         state.deadline,
         state.seed,
-        state.tx || null
+        state.tx || null,
+        state.max_retries || 10,
     ];
 
     try {
@@ -115,10 +120,12 @@ async function saveResults(connection, state) {
                 hash,
                 proof,
                 result,
-                sig
+                sig,
+                tx,
+                success
             )
         VALUES
-            (?, ?, ?, ?, ?, ?, ?)
+            (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const values = [
@@ -128,7 +135,9 @@ async function saveResults(connection, state) {
         state.hash,
         state.proof,
         state.result,
-        state.sig
+        state.sig,
+        state.tx || null,
+        state.success || false
     ];
 
     try {
@@ -141,30 +150,95 @@ async function saveResults(connection, state) {
     // console.log('Row inserted');
 }
 
+async function reduceRetries(connection, id) {
+    const sql = `
+        UPDATE requests
+        SET max_retries = max_retries - 1
+        WHERE id = ?;
+    `;
+
+    const values = [id];
+
+    try {
+        const { results, fields } = await queryPromise(connection, sql, values);
+        return results;
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
+}
+
 async function getRequestsToRun(connection, nodeId) {
-    // const sql = `
-    //     SELECT * 
-    //     FROM requests 
-    //     WHERE deadline > UNIX_TIMESTAMP() 
-    //     AND id NOT IN (
-    //         SELECT request_id 
-    //         FROM results 
-    //         WHERE node_id = ?
-    //     );
-    // `;
     const sql = `
         SELECT r.* 
         FROM requests r
-        LEFT JOIN (
-            SELECT DISTINCT request_id 
-            FROM results 
-            WHERE node_id = ?
-        ) AS res ON r.id = res.request_id
-        WHERE r.deadline > UNIX_TIMESTAMP() 
-        AND res.request_id IS NULL;
+        WHERE r.deadline > UNIX_TIMESTAMP() AND r.max_retries > 0
+        AND NOT EXISTS (
+            SELECT 1
+            FROM results
+            WHERE results.request_id = r.id
+        );
     `;
 
+    // TODO: tasks for a specific node
     const values = [nodeId];
+
+    try {
+        const { results, fields } = await queryPromise(connection, sql, values);
+        return results;
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
+}
+
+async function getRequestStatus(connection, id) {
+    // const successSql = `
+    //     SELECT COUNT(*) AS success_count
+    //     FROM results
+    //     WHERE results.request_id = ?    
+    // `;
+    // const successValues = [id];
+
+    // const pendingSql = `
+    //     SELECT r.id
+    //     FROM requests r
+    //     WHERE r.id = ?
+    //     AND r.max_retries > 0
+    //     AND NOT EXISTS (
+    //         SELECT 1
+    //         FROM results
+    //         WHERE results.request_id = r.id
+    //     );    
+    // `;
+    // const pendingValues = [id];
+
+    // const failSql = `
+    //     SELECT r.id
+    //     FROM requests r
+    //     WHERE r.id = ?
+    //     AND r.max_retries = 0
+    //     AND NOT EXISTS (
+    //         SELECT 1
+    //         FROM results
+    //         WHERE results.request_id = r.id
+    //     );
+    // `;
+    // const failValues = [id];
+
+    const sql = `
+        SELECT 
+            r.id,
+            CASE
+                WHEN r.max_retries > 0 AND NOT EXISTS (SELECT 1 FROM results WHERE results.request_id = r.id) THEN 'pending'
+                WHEN r.max_retries = 0 AND NOT EXISTS (SELECT 1 FROM results WHERE results.request_id = r.id) THEN 'fail'
+                WHEN EXISTS (SELECT 1 FROM results WHERE results.request_id = r.id) THEN 'success'
+            END AS status
+        FROM requests r
+        WHERE r.id = ?
+    `;
+
+    const values = [id];
 
     try {
         const { results, fields } = await queryPromise(connection, sql, values);
@@ -226,6 +300,7 @@ async function getIdsToPublish(connection, quorum) {
             GROUP BY request_id
         ) AS res_count ON r.id = res_count.request_id
         WHERE r.tx IS NULL 
+        AND r.max_retries > 0 
         AND res_count.distinct_nodes >= ?
         AND res_max.max_timestamp <= r.deadline
         AND EXISTS (
@@ -267,7 +342,7 @@ async function getResultsById(connection, id) {
     }
 }
 
-async function setTxById(connection, tx, id) {
+async function setRequestTxById(connection, tx, id) {
     const sql = `
         UPDATE requests
         SET tx = ?
@@ -285,6 +360,43 @@ async function setTxById(connection, tx, id) {
     }
 }
 
+async function setResultTxById(connection, tx, id) {
+    const sql = `
+        UPDATE results
+        SET tx = ?
+        WHERE id = ?;
+    `;
+
+    const values = [tx, id];
+
+    try {
+        const { results, fields } = await queryPromise(connection, sql, values);
+        return results;
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
+}
+
+async function setSuccessTxById(connection, success, id) {
+    const sql = `
+        UPDATE results
+        SET success = ?
+        WHERE id = ?;
+    `;
+
+    const values = [success, id];
+
+    try {
+        const { results, fields } = await queryPromise(connection, sql, values);
+        return results;
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
+
+}
+
 module.exports = {
     createTable,
     saveRequest,
@@ -293,5 +405,9 @@ module.exports = {
     getRequestsToRun,
     getIdsToPublish,
     getResultsById,
-    setTxById
+    setRequestTxById,
+    setResultTxById,
+    setSuccessTxById,
+    reduceRetries,
+    getRequestStatus
 };

@@ -1,12 +1,15 @@
 const { createConnection, closeConnection } = require('../relay/db/maria');
-const { createTable, saveNodes, saveResults, getRequestsToRun } = require('../relay/db/queries');
+const { createTable, saveNodes, saveResults, getRequestsToRun, setRequestTxById, reduceRetries, getRequestStatus } = require('../relay/db/queries');
 const BN = require('bn.js');
 const axios = require('axios');
 const elliptic = require('elliptic');
 const { Script, createContext } = require('vm');
 
-const VRF_ENDPOINT = "http://localhost:30327";
-const COUNTER_ENDPOINT = "http://localhost:30328";
+const VRF_PORT = 30327;
+const COUNTER_PORT = 30328;
+const VRF_ENDPOINT = `http://localhost:${VRF_PORT}`;
+const COUNTER_ENDPOINT = `http://localhost:${COUNTER_PORT}`;
+
 let connection;
 
 const EC = new elliptic.ec('secp256k1');
@@ -17,7 +20,7 @@ let node_id;
 let processing = false;
 const EPOCH = 10000; // (ms)
 const TIMEOUT = 30000; // (ms)
-const DIFF = new BN("8000000000000000000000000000000000000000000000000000000000000000", 'hex');
+const DIFF = new BN("FFFFFFFFFFFFFFFFFFFFFFFFFF00000000000000000000000000000000000000", 'hex');
 
 const sandbox = {
     console: console,
@@ -49,17 +52,27 @@ async function run(uri, params) {
 async function cron() {
     if (processing) {
         return;
-    } else {
-        processing = true;
+    }
 
-        const jobs = await getRequestsToRun(connection, node_id);
-        for (let i = 0; i < jobs.length; i++) {
-            const job = jobs[i];
-            const id = job.id;
-            const seed = job.seed;
-            const uri = job.uri;
-            const params = JSON.parse(job.params);
+    processing = true;
 
+    let jobs;
+    try {
+        jobs = await getRequestsToRun(connection, node_id);
+        // console.log(jobs);
+        console.log(jobs.length);
+    } catch (error) {
+        console.error(error);
+    }
+
+    for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        const id = job.id;
+        const seed = job.seed;
+        const uri = job.uri;
+        const params = JSON.parse(job.params);
+
+        try {
             const _responseEpoch = await axios.get(COUNTER_ENDPOINT + "/epoch");
             const epoch = _responseEpoch.data.epoch;
             const _now = new Date();
@@ -92,16 +105,21 @@ async function cron() {
                     "hash": hash.toString(),
                     "proof": proof.toString(),
                     "result": result,
-                    "sig": tmpSig
+                    "sig": tmpSig,
+                    "success": false
                 });
                 // console.log(savedResult.insertId);
             } else {
                 console.log(`${id} PASS`)
             }
-        }
+        } catch (err) {
+            console.error(err);
 
-        processing = false;
+            const reducedRetries = await reduceRetries(connection, id);
+        }
     }
+
+    processing = false;
 }
 
 async function init() { // DB
